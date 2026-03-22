@@ -1,0 +1,163 @@
+"""
+Simple Sentiment Analysis Chatbot with OpenAI
+
+A minimal sentiment analysis chatbot without extra dependencies.
+
+Requirements:
+pip install openai --break-system-packages
+"""
+
+from openai import OpenAI
+import json
+
+
+def analyze_sentiment(client, text):
+    """Analyze sentiment of text using OpenAI"""
+    prompt = f"""Analyze the sentiment of this text and respond in JSON format:
+
+Text: "{text}"
+
+Provide JSON with:
+- "sentiment": "positive", "negative", "neutral", or "mixed"
+- "confidence": 0.0 to 1.0
+- "emotions": list of emotions detected
+- "explanation": brief why
+
+Return only valid JSON."""
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a sentiment analyzer. Return only JSON."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.3
+    )
+    
+    result = response.choices[0].message.content.strip()
+    
+    # Clean markdown if present
+    if "```" in result:
+        result = result.split("```")[1]
+        if result.startswith("json"):
+            result = result[4:]
+        result = result.strip()
+    
+    return json.loads(result)
+
+
+def generate_response(client, user_message, sentiment_data, history):
+    """Generate empathetic response"""
+    sentiment = sentiment_data.get('sentiment', 'neutral')
+    emotions = ', '.join(sentiment_data.get('emotions', []))
+    
+    system_prompt = f"""You are an empathetic chatbot.
+    
+Detected sentiment: {sentiment}
+Detected emotions: {emotions}
+
+Respond appropriately:
+- Positive: Be enthusiastic
+- Negative: Be supportive
+- Neutral: Be friendly
+- Mixed: Acknowledge complexity
+
+Keep it brief (2-3 sentences)."""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    
+    # Add history
+    for msg in history[-3:]:
+        messages.append({"role": "user", "content": msg['user']})
+        messages.append({"role": "assistant", "content": msg['bot']})
+    
+    messages.append({"role": "user", "content": user_message})
+    
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        temperature=0.7
+    )
+    
+    return response.choices[0].message.content
+
+
+def main():
+    """Run the chatbot"""
+    print("="*60)
+    print(" SENTIMENT ANALYSIS CHATBOT")
+    print("="*60)
+    print("I analyze your emotions and respond with empathy!")
+    print("\nType 'quit' to exit")
+    print("="*60)
+    
+    # Initialize
+    try:
+        client = OpenAI()
+    except Exception as e:
+        print(f"Error: {e}")
+        print("Set OPENAI_API_KEY environment variable")
+        return
+    
+    history = []
+    sentiment_counts = {'positive': 0, 'negative': 0, 'neutral': 0, 'mixed': 0}
+    
+    print("\nReady! Start chatting...\n")
+    
+    # Chat loop
+    while True:
+        try:
+            user_input = input("You: ").strip()
+            
+            if not user_input:
+                continue
+            
+            if user_input.lower() in ['quit', 'exit']:
+                # Show summary
+                total = sum(sentiment_counts.values())
+                if total > 0:
+                    print("\n" + "="*60)
+                    print("SENTIMENT SUMMARY")
+                    print("="*60)
+                    for sent, count in sentiment_counts.items():
+                        pct = (count/total)*100
+                        print(f"{sent.capitalize()}: {count} ({pct:.1f}%)")
+                    print("="*60)
+                print("\nGoodbye!")
+                break
+            
+            # Analyze sentiment
+            print("\nAnalyzing...")
+            sentiment_data = analyze_sentiment(client, user_input)
+            
+            # Display sentiment
+            print("\n" + "-"*60)
+            print(f"Sentiment: {sentiment_data['sentiment'].upper()}")
+            print(f"Confidence: {sentiment_data['confidence']:.0%}")
+            if sentiment_data['emotions']:
+                print(f"Emotions: {', '.join(sentiment_data['emotions'])}")
+            print(f"Why: {sentiment_data['explanation']}")
+            print("-"*60)
+            
+            # Track sentiment
+            sentiment_counts[sentiment_data['sentiment']] += 1
+            
+            # Generate response
+            print("\nThinking...")
+            response = generate_response(client, user_input, sentiment_data, history)
+            
+            # Save history
+            history.append({'user': user_input, 'bot': response})
+            
+            # Display response
+            print(f"\nBot: {response}\n")
+            
+        except KeyboardInterrupt:
+            print("\n\n Interrupted. Goodbye!")
+            break
+        except Exception as e:
+            print(f"\n error: {e}\n")
+
+
+if __name__ == "__main__":
+    main()
